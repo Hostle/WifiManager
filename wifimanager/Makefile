@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wifimanager
 PKG_VERSION:=1.01.1
-PKG_DEPENDS:= +luci-admin-full +nixio
+PKG_DEPENDS:= +luci-admin-full +luci-lib-nixio
 include $(INCLUDE_DIR)/package.mk
 
 define Package/wifimanager
