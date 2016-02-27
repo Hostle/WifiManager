@@ -41,7 +41,7 @@ define Package/wifimanager/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./files/usr/bin/wifimanager $(1)/usr/bin/wifimanager
 	$(INSTALL_DIR) $(1)/usr/lib/lua/WifiManager
-	$(INSTALL_DATA) ./files/usr/lib/lua/WiFiManager/functions.lua $(1)/usr/lib/lua/WifiManager/functions.lua
+	$(INSTALL_DATA) ./files/usr/lib/lua/WifiManager/functions.lua $(1)/usr/lib/lua/WifiManager/functions.lua
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/wifimanager $(1)/etc/init.d/wifimanager
 	$(INSTALL_DIR) $(1)/etc/config
