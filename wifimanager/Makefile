@@ -9,7 +9,7 @@ define Package/wifimanager
   SECTION:=sys
   CATEGORY:=System
   TITLE:=WifiManager
-  DEPENDS:= +luci-admin-full +nixio
+  DEPENDS:= +luci-admin-full +luci-lib-nixio
 endef
 
 define Package/wifimanager/description
