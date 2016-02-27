@@ -2,17 +2,17 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wifimanager
 PKG_VERSION:=1.01.1
-
+PKG_DEPENDS:= +luci-admin-full +nixio
 include $(INCLUDE_DIR)/package.mk
 
-define Package/wifimanager/description
-  Automated Wireless Configuration Daemon
-endef
-
-define Package/firewrt
+define Package/wifimanager
   SECTION:=sys
   CATEGORY:=System
   TITLE:=WifiManager
+endef
+
+define Package/wifimanager/description
+  Automated Wireless Configuration Daemon
 endef
 
 define Package/wifimanager/description
