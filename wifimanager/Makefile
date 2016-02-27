@@ -9,6 +9,7 @@ define Package/wifimanager
   SECTION:=sys
   CATEGORY:=System
   TITLE:=WifiManager
+  DEPENDS:= +luci-admin-full +nixio
 endef
 
 define Package/wifimanager/description
@@ -34,7 +35,7 @@ define Build/Compile
 	CFLAGS="$(TARGET_CFLAGS) -Wall -fPIC"
 endef
 
-define Package/firewrt/install
+define Package/wifimanager/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wifimanager.so $(1)/usr/lib/lua/wifimanager.so
 	$(INSTALL_DIR) $(1)/usr/bin
@@ -51,4 +52,4 @@ define Package/firewrt/install
 	$(INSTALL_DATA) ./files/usr/lib/lua/luci/model/cbi/admin_wifimanager/* $(1)/usr/lib/lua/luci/model/cbi/admin_wifimanager/
 endef
 
-$(eval $(call BuildPackage,wifmanager))
+$(eval $(call BuildPackage,wifimanager))
