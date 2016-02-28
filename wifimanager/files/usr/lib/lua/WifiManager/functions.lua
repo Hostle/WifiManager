@@ -3,7 +3,7 @@
 -- VERSION 1.01.1
 -- By HOSTLE 2/17/2016
 
-module("wifimanager.functions", package.seeall)
+module("WifiManager.functions", package.seeall)
 
 --## DEPENDANCIES ##--
 require("wifimanager")
@@ -441,7 +441,6 @@ function add_sta()
   local enc = uci:get("wireless.@wifi-iface["..sec.."].encryption")
   local key = uci:get("wireless.@wifi-iface["..sec.."].key")
   if not util.contains(csta, essid) then
-    csta = {}
     uci:add("wifimanager", "wifi")
     uci:commit("wifimanager")
     uci:set("wifimanager.@wifi[-1].ssid="..essid)
@@ -453,5 +452,3 @@ function add_sta()
  return
 end
 ---------------------------------------[[ END CONFIGUARATION ]]--------------------------
-
-conn_test(5)
