@@ -1,3 +1,5 @@
+#!/usr/bin/lua
+
 --[[ WIFIMANAGER FUNCTIONS MODULE ]]--
 
 -- VERSION 1.01.1
