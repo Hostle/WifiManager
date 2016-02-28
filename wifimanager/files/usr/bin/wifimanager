@@ -201,7 +201,7 @@ while coroutine.status(main_thread)~="dead" do
     local tc 
     if (mem > 100900) and (mem < 101900) then 
       tc = 93
-    elseif (mem > 101900) then
+    elseif (mem > 103000) then
       tc = 91
     else
       tc = 92
