@@ -1,7 +1,7 @@
---[[ NETWORK MANAGER MODULE ]]--
+--[[ WIFIMANGER FUNCTIONS MODULE ]]--
 
 -- VERSION 1.01.1
--- By HOSTLE 2/17/2016
+-- By HOSTLE 2/27/2016
 
 module("WifiManager.functions", package.seeall)
 
