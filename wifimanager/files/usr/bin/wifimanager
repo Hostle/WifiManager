@@ -1,25 +1,21 @@
-#!/usr/bin/lua
+--[[ WIFIMANAGER FUNCTIONS MODULE ]]--
 
---[[ wifimanger main module ]]--
+-- VERSION 1.01.1
+-- By HOSTLE 2/17/2016
 
--- Version 1.01.1
--- By Hostle 2/29/2016
+module("WifiManager.functions", package.seeall)
 
---## DEPENDENTS ##--
-require ("uci")
+--## DEPENDANCIES ##--
+require("wifimanager")
 require ("iwinfo")
+require ("uci")
 local nix = require ("nixio")
-local net = require ("WifiManager.functions")
 local util = require ("luci.util")
 local sys = require ("luci.sys")
 
---## VERSION INFO ##--
-local version = "1.01.1"
-
---## LOCAL FLAGS ##--
-local verbose = 0
-local boot_flag = 0
-local abort = 0
+--## LOCAL BUFFERS ##--
+local essid
+local debug = 0
 
 --## LOCAL VARS ##--
 local uci = uci.cursor()
@@ -27,199 +23,432 @@ local ping_addr = uci:get("wifimanager", "conn", "PingLocation")
 local boot_tries = tonumber(uci:get("wifimanager", "conn", "boot_tries"))
 local net_tries = tonumber(uci:get("wifimanager", "conn", "net_tries"))
 local new_nets = tonumber(uci:get("wifimanager", "conn", "new_nets"))
-local log_lev = tonumber(uci:get("wifimanager", "conn", "log_lev"))
 local ap_mode = tonumber(uci:get("wifimanager", "ap", "ap_mode"))
-local last_sta = net.get_ssid()
-local new_sta
 
---## START TIMES ##--
-local conn_time = os.time()
-local ap_time = os.time()
-local sta_time = os.time()
+---------------------------------------[[ LOGGING ]]-------------------------------------
 
---## TIME LIMITS ##--
-local conn_int = tonumber(uci:get("wifimanager", "conn", "ConnCheckTimer"))
-local ap_int = 6 --tonumber(uci:get("wifimanager", "conn", "ConnCheckTimer"))
-local sta_int = 4 --tonumber(uci:get("wifimanager", "conn", "ConnCheckTimer"))
-
---## OPTIONS MENU ##--
-local help_msg = "\n\t\t\t  Wifi Manager ( "..version.." )\n\n\t\t\t ###### OPTIONS ######\n\t\t\t #####################\n\t\t\t # -h Print Help     #\n\t\t\t # -v Verbose Mode   #\n\t\t\t # -d Debugging Mode #\n\t\t\t # -s Version Info   #\n\t\t\t #####################\n\n"
+--## LOG LEVEL ##--
+local log_lev = tonumber(uci:get("wifimanager", "conn", "log_lev"))
 
 --## logger ##-- 
 --[[ 1 = alert, 2 = crit, 3 = notice, 4 = warn, 5 = notice, 6 = info, 7 = debug, 8 = notice, 9 = alert ]]--
-local function logger(lev,msg)
+function logger(lev,msg)
   local log = sys.exec("logger -p daemon."..lev.." "..msg.." -t WifiManager")
  return
 end
-  
---## MAIN THREAD ##--
-main = function()
-  while true do
+---------------------------------------[[ END LOGGING ]]---------------------------------
 
-  --## INTAIAL BOOT, WAIT FOR NETWORK TO COME UP##--
-  if (boot_flag == 0) then
-    if (verbose > 0) then 
-      local msg = "BOOT THREAD STATE: { WORKING } ..."
-      io.write("\27[94m"..msg.."\27[0m")
-    end
-    local essid = net.get_ssid()
-    logger(1,"{boot thread} STARTING WIFI MANAGER")
-    logger(1,"{boot thread} WAITING FOR NETWORK")
-    repeat
-      local up = net.net_status()
-    until up 
-    boot_flag = 1
-    logger(6,"{boot thread} WWAN NETWORK IS UP")
-    logger(1,"{boot thread} CONNECTED TO: "..essid:upper())
-	logger(6,"{boot thread} CHECKING FOR INTERNET CONNECTION")
-	if essid ~= "disabled" and net.conn_test(boot_tries) then 
-	  logger(1,"{boot thread} INTERNET CONNECTION TEST PASSED")
-	else
-	  logger(1,"{boot thread} INTERNET CONNECTION TEST FAILED")
-	  logger(1,"{boot thread} SEARCHING FOR AVAILABLE NETWORKS")
-	  if net.config_check("wireless") or (abort >= 6) then
-	    abort = 0
-	    net.find_network(essid)
-	  end
-	end
-  if (verbose > 0) then msg =" ALL TASK FINISHED SUCCESSFULLY" io.write("\27[92m"..msg.."\27[0m\n") end    
-  end
-   
 
-    --## CONNECTION TEST THREAD ##--
-    local c = os.difftime(os.time(),conn_time)
-    local essid = net.get_ssid()
-    if (verbose > 0) then
-      if (c >= conn_int) then 
-        local msg = "CONN THREAD STATE: { WORKING } ..."
-	io.write("\27[94m"..msg.."\27[0m")
-      else
-        print(string.format("CONN THREAD\t{ CURRENT COUNT:%d | INTERVAL: %d }",c,conn_int))
-      end
-    end
-    if (c >= conn_int) then
-      if (log_lev > 0) then logger(6,"{conn thread} CONNECTED TO { "..essid:upper().." }") end
-        if essid ~= "disabled" and net.conn_test(net_tries) then
-		  logger(1,"{conn thread} INTERNET CONNECTION TEST PASSED")
-		else
-		  logger(1,"{conn thread} INTERNET CONNECTION TEST FAILED")
-          if net.config_check("wireless") or (abort >= 6) then
-            abort = 0
-            net.find_network(essid)
-          else
-	        logger(2,"{conn thread} WIRELESS CONFIG HAS PENDING CHANGES ... ABORTING !!")
-            abort = abort + 1
-            logger(2,"{conn thread} ABORT COUNT: "..abort)
-	  nix.nanoslepp(1,0)
-          end
-        end
-     if (verbose > 0) then msg =" ALL TASK FINISHED SUCCESSFULLY" io.write("\27[92m"..msg.."\27[0m\n") end    
-     conn_time = os.time()
-    end
-	
-	--## STA THREAD ##--
-    local s = os.difftime(os.time(),sta_time)
-    if (verbose > 0) then
-      if (s >= sta_int) then 
-        local msg = "STA THREAD STATE: { WORKING } ..."
-	io.write("\27[94m"..msg.."\27[0m")
-      else
-        print(string.format("STA THREAD\t{ CURRENT COUNT:%d | INTERVAL: %d }",s,sta_int))
-      end
-    end
-    if (s >= sta_int) then
-	  local sec = net.sta_sec()
-	  local new_sta = net.get_ssid()
-	  
-	  if new_sta ~= last_sta then
-	    logger(2,"{sta thread} STA SSID HAS CHANGED [ "..new_sta.." ]")
-	  end
-	  last_sta = new_sta
-	  if (tonumber(new_nets) == 1 ) then 
-	    net.add_sta() 
-	  end
-    if (verbose > 0) then msg =" ALL TASK FINISHED SUCCESSFULLY" io.write("\27[92m"..msg.."\27[0m\n") end     
-    sta_time = os.time()
-    end
-	
-	--## AP THREAD ##--
-    local a = os.difftime(os.time(),ap_time)
-    if (verbose > 0) then
-      if (a >= ap_int) then
-        local msg = "AP THREAD STATE: { WORKING } ..."
-	io.write("\27[94m"..msg.."\27[0m")
-      else
-        print(string.format("AP THREAD\t{ CURRENT COUNT:%d | INTERVAL: %d }",a,ap_int))
-      end
-    end
-    if (a >= ap_int) then
-	  local sec = net.ap_sec()
-	  
-	  if not sec and (ap_mode == 1) then
-	  
-		if net.config_check("wireless") or (abort >= 3) then
-		  abort = 0
-		  net.add_ap()
-		else
-		  logger(2,"{ap thread} WIRELESS CONFIG HAS PENDING CHANGES ... ABORTING !!")
-		  abort = abort + 1
-		  logger(2,"ABORT COUNT: "..abort)
-		  nix.nanosleep(1,0)
-		end
-	  end
-     if (verbose > 0) then local msg =" ALL TASK FINISHED SUCCESSFULLY" io.write("\27[92m"..msg.."\27[0m\n") end   
-     ap_time = os.time()
-    end
-    coroutine.yield()
-  end
+---------------------------------------[[ UTILITIES ]]-----------------------------------
+
+--## PRINTF FUNCTION ##--
+local function printf(fmt, ...)
+	print(string.format(fmt, ...))
 end
 
---## CMD LINE OPIONS ##--
-if #arg > 0 then
-  if arg[1] == "-h" then
-    print(help_msg)
-    return
-  elseif arg[1] == "-v" then
-    print("Verbose mode")
-    verbose = 1
-  elseif arg[1] == "-d" then
-    print("Debug mode")
-    debug = 1
-  elseif arg[1] == "-s" then
-    print(version)
-    return
+--## CHECK IF VAL IS A STRING ##--
+local function str(x)
+  if x == nil then
+    return "?"
   else
-    print(help_msg)
+    return tostring(x)
   end
 end
 
---## START OF PROGRAM ##--
-main_thread=coroutine.create(main)
-coroutine.resume(main_thread)
---## POST STATUS ON INITIAL STARTUP ##--
-while coroutine.status(main_thread)~="dead" do
-  if(verbose > 0 ) then
-    print("\nCHECKING TIMER THREADS ...",select(2,coroutine.resume(main_thread)))
-    print("CONN THREAD STATE: { "..coroutine.status(main_thread).." }")
-    print("STA THREAD STATE: { "..coroutine.status(main_thread).." }")
-    print("AP THREAD STATE: { "..coroutine.status(main_thread).." }\n")
-    local mem = collectgarbage('count')*512
-    local tc 
-    if (mem >= 100900) and (mem <= 104999) then 
-      tc = 93
-    elseif (mem >= 105000) then
-      tc = 91
+--## CHECK IF VAL IS A NUMBER ##--
+function num(x)
+  if x == nil then
+    return 0
+  else
+    return tonumber(x)
+  end
+end
+
+--## SORT NETWORKS BY SIGNAL STRENGTH ##--
+function spairs(t, order)
+    -- collect the keys
+    local keys = {}
+    for k in pairs(t) do keys[#keys+1] = k end
+
+    -- if order function given, sort by it by passing the table and keys a, b,
+    -- otherwise just sort the keys 
+    if order then
+        table.sort(keys, function(a,b) return order(t, a, b) end)
     else
-      tc = 92
+        table.sort(keys)
     end
-    --## 91 red, 93 yellow, 92 green
-    io.write("TOTAL MEMORY USAGE: ")
-    io.write("\27["..tc.."m( "..mem.." kb )\27[0m\n")
-    collectgarbage()
-    nix.nanosleep(1,0)
+
+    -- return the iterator function
+    local i = 0
+    return function()
+        i = i + 1
+        if keys[i] then
+            return keys[i], t[keys[i]]
+        end
+    end
+end
+
+--## PREVENT COLLISIONS BETWEEN LUCI AND WIFIMANAGER ##--
+function config_check(config)
+  local uci = uci.cursor()
+  local chg = uci:changes(config) or {}
+  for i,v in pairs(chg) do
+   if i == config then return false end
+  end
+ return true
+end
+  
+--## RANDOM MAC ADDRESS ##--
+local function randmac()
+  local mac = sys.exec("dd if=/dev/urandom bs=1024 count=1 2>/dev/null|md5sum|sed 's/^\(..\)\(..\)\(..\)\(..\)\(..\)\(..\).*$/00:\2:\3:\4:\5:01/'")
+  mac = string.format("%s:%s:%s:%s:%s:%s", mac:sub(0,2),mac:sub(3,4), mac:sub(6,7),mac:sub(9,10),mac:sub(12,13),mac:sub(15,16))
+  mac = mac:upper()
+ return mac
+end
+
+--## FIND THE CONFIG SECTION FOR A GIVEN FIELD AND VALUE ##--
+local function conf_sec(field,val)
+  if (debug > 1) then logger(6,"{conf_sec func} BEGINNING CONFIG SECTION TEST") end
+  if (debug > 2) then logger(7,"{conf_sec func} SEARCH FOR SECTION: { "..field.." }") end
+  if (debug > 2) then logger(7,"{conf_sec func} SEARCH FOR VALUE: { "..val.." }") end
+  local i = 0
+  local sec
+  local uci = uci.cursor()
+  repeat
+    sec = uci:get("wifimanager.@wifi["..i.."]."..field)
+    i = i + 1
+    if sec == nil then
+       if (debug > 1) then logger(6,"{conf_sec func} NETWORK SECTION TEST RESULT: { FAILED }") end
+       return 0 
+     end
+  until sec == val
+  if sec then
+    if ( debug > 1) then logger(6,"{conf_sec func} NETWORK SECTION TEST RESULT: { PASSED }") end
+    if ( debug > 2) then logger(7,"{conf_sec func} NETWORK SECTION { "..i-1 .." }") end
+    return i-1
   else
-    nix.nanosleep(1,0)
-    select(2,coroutine.resume(main_thread))
-    collectgarbage()
+    return 0
   end
 end
+
+--## FIND THE STA SECTION IN THE WIFI CONFIG ##--
+function sta_sec()
+  if (debug > 1)  then logger(6,"{sta_sec func} BEGINNING STA SECTION TEST [ STA_SEC FUNCTION ]") end
+  if (debug > 2) then logger(7,"{sta_sec func} SEARCH FOR SECTION: { STA } [ STA_SEC FUNCTION ]") end
+  local i = 0
+  local sec
+  local uci = uci.cursor()
+  repeat
+    sec = uci:get("wireless.@wifi-iface["..i.."].mode")
+    i = i + 1
+   if sec == nil then 
+     if (debug > 1) then logger(6,"{sta_sec func} NETWORK SECTION TEST FAILED: { NO STA FOUND } [ STA_SEC FUNCTION ]") end
+     return false
+   end
+  until sec == "sta"
+ if sec then
+  if (debug > 1) then logger(6,"{sta_sec func} STA SECTION TEST PASSED: { STA FOUND } [ STA_SEC FUNCTION ]") end
+  if (debug > 2) then logger(7,"{sta_sec func} STA SECTION { "..i-1 .." } [ STA_SEC FUNCTION ]") end
+  return i-1
+ else
+  return false
+ end
+end
+
+--## FIND THE AP SECTION IN THE WIFI CONFIG ##--
+function ap_sec()
+  if (debug > 1)  then logger(6,"{ap_sec func} BEGINNING AP SECTION TEST [ AP_SEC FUNCTION ]") end
+  if (debug > 2) then logger(7,"{ap_sec func} SEARCH FOR SECTION: { AP } [ AP_SEC FUNCTION ]") end
+  local i = 0
+  local sec
+  local uci = uci.cursor()
+  repeat
+    sec = uci:get("wireless.@wifi-iface["..i.."].mode")
+    i = i + 1
+   if sec == nil then 
+     if (debug > 1) then logger(6,"{ap_sec func} AP SECTION TEST FAILED: { NO AP FOUND } [ AP_SEC FUNCTION ]") end
+     return false
+   end
+  until sec == "ap"
+ if sec then
+  if (debug == 1) then logger(6,"{ap_sec func} AP SECTION TEST PASSED: { AP FOUND } [ AP_SEC FUNCTION ]") end
+  if (debug == 2) then logger(7,"{ap_sec func} AP SECTION { "..i-1 .." } [ AP_SEC FUNCTION ]") end
+  return i-1
+ else
+  return false
+ end
+end
+
+--## GET THE SSID OF THE CURRENT NETWORK ##--
+function get_ssid()
+ local sec = sta_sec("sta") or 0
+ local uci = uci.cursor()
+ local is_up = uci:get("wireless.@wifi-iface["..sec.."].disabled")
+ local ssid = uci:get("wireless.@wifi-iface["..sec.."].ssid")
+ if is_up == "1" then return "disabled" end
+ return ssid
+end
+---------------------------------------[[ END UTILITIES ]]------------------------------------
+
+
+-----------------------------------------[[ NETWORK ]]----------------------------------------
+
+--## TEST IF NETWORK IS UP ##-- 
+function net_status()
+  if (log_lev > 2) then logger(6,"{net_status func} BEGINNING DEVICE STATUS TEST") end
+  if (log_lev > 2) then logger(7,"{net_status func} DEVICE: { WWAN }") end
+  local conn = ubus.connect(nil,600)
+  if not conn then
+    logger(1,"{net_status func} Failed to connect to ubusd")
+    return false
+  end
+
+  local net = conn:call("network.device", "status", { name = "wlan0" })
+  conn:close()
+  if net then
+    if (debug > 1) then logger(6,"{net_status func} DEVICE STATUS TEST RESULT: { PASSED }") end
+    return net.up
+  end
+ return false
+end
+
+local function get_ip(p)
+  local hn = nixio.getaddrinfo(p,'inet','80')
+  local ip = hn[1]["address"]
+ return ip
+end
+
+--## TEST FOR INTERNET CONNECTION PART A ##--
+function conn_test(int)
+  if (log_lev > 2) then logger(7,"{conn_test func} BEGINNING NETWORK CONNECTION TEST INTERVAL: "..int) end
+  for i=1, int do 
+    local has_net = inet(get_ip(ping_addr),"80","1")
+    if not has_net then 
+      logger(1,"{conn_test func} NETWORK CONNECTION TEST [ "..i.." of "..int.." ] FAILED")
+      if (i >= int) then return false end
+    else
+      nix.nanosleep(0,5)
+      if (debug > 2) then logger(7,"{conn_test func} NETWORK CONNECTION TEST COMPLETED SUCCESSFULY ON ATTEMPT: "..i) end
+      if (log_lev > 1) then logger(6,"{conn_test func} NETWORK CONNECTION TEST [ "..i.." of "..int.." ] PASSED") end
+      break
+    end
+  end
+ return true
+end
+
+--## RELOAD NETWORK ##--
+function network_reload()
+  if (log_lev > 0) then logger(6,"{network_reload func} RELOADING NETWORK") end
+  sys.exec("/etc/init.d/network reload")
+  nix.nanosleep(3,0)
+  if (log_lev > 0) then logger(6,"{network_reload func} NETWORK RELOADED SUCCESSFULLY") end
+ return
+end
+
+--## SCAN AVAILABLE NETWORKS AND LOAD INTO SORTED TABLE, SSID IS KEY BSSID IS VALUE##--
+function net_scan(dev)
+  if (debug > 2) then logger(7,"{net_scan func} NETWORK SCAN { "..dev.." }") end
+  local api = iwinfo.type(dev)
+  if not api then
+    print("{net_scan func} No such wireless device: " .. dev)
+    os.exit(1)
+  end
+  local iw = iwinfo[api]
+  local sr = iw.scanlist(dev)
+  local si, se
+  local conns = {}
+  local ssta = {}
+  if sr and #sr > 0 then
+    for si, se in ipairs(sr) do
+      conns[str(se.ssid)] = { 
+			     ["bssid"]=se.bssid, 
+			     ["essid"]= str(se.ssid), 
+			     ["mode"]=str(se.mode), 
+			     ["channel"]=num(se.channel),
+			     ["signal"]=str(se.signal),
+			     ["quality"]= num(se.quality),
+			     ["quality_max"]= num(se.quality_max),
+			     ["encryption"]=str(se.encryption.description or "None")
+			    }
+    end
+  else
+    logger(1,"{net_scan func} NO SCAN RESULTS OR SCANNING NOT POSSIBLE")
+  end
+  local x = 1
+  local tbuf = {}
+  for i,v in pairs(conns) do
+    tbuf[conns[i]["essid"]] = conns[i]["signal"]
+    --print(i,i["signal"])
+  end
+  for k,v in spairs(tbuf, function(t,a,b) return t[b] > t[a] end) do
+    --print("--",k,v)
+    ssta[x]={ k, conns[k]["bssid"], conns[k]["channel"] }
+    x = x + 1
+  end
+  if (debug > 2) then logger(7,"{net_scan func} NETWORK SCAN COMPLETED") end
+ return ssta
+end
+---------------------------------------[[ END NETWORK ]]---------------------------------
+
+
+---------------------------------------[[ CONFIGAURATION ]]------------------------------
+
+--## LOAD KNOWN NETWORKS FROM CONFIG INTO TABLE ##--
+local function config_sta()
+  local csta = {}
+  local uci = uci.cursor()
+  uci:foreach("wifimanager", "wifi", function(s) if s.ssid ~= nil then csta[#csta+1]=s.ssid end end )
+  return csta
+end
+
+local function wifi_sta()
+  local wsta = {}
+  local uci = uci.cursor()
+  uci:foreach("wireless", "wifi-iface", function(s) if s.ssid ~= nil then wsta[#wsta+1]=s.ssid end end )
+  return wsta
+end
+
+--## ADD THE NETWORK TO THE WIRELESS CONFIG ENABLE IT ##--
+local function set_client(ssid,enc,key,bssid,chn)
+ local sec = sta_sec("sta") or 0
+ if (log_lev == 1) then logger(6,"{set_client func} SETTING UP NEW CLIENT") end
+ if (log_lev > 1) then logger(7,"{set_client func} SETTING UP NEW CLIENT SSID: "..ssid) end
+  if ssid and enc and key and bssid then
+    local uci = uci.cursor()
+    uci:set("wireless.@wifi-iface["..sec.."].ssid="..ssid)
+    uci:set("wireless.@wifi-iface["..sec.."].encryption="..enc)
+    uci:set("wireless.@wifi-iface["..sec.."].key="..key)
+    uci:set("wireless.@wifi-iface["..sec.."].bssid="..bssid)
+    uci:set("wireless.@wifi-iface["..sec.."].mode=".."sta")
+    uci:set("wireless.@wifi-iface["..sec.."].channel=".."chn")
+    uci:commit("wireless")
+    if (log_lev > 2) then logger(6,"{set_client func} SETTING UP NEW CLIENT { PASSED } ") end
+    return true
+  else
+    if (log_lev > 2) then logger(7,"{set_client func} SETTING UP NEW CLIENT { FAILED } ") end
+    return false
+  end
+end
+
+--## PREPARE A NETWORK ENTRY TO BE ADDED ##--
+local function prep_client(ssid,bssid,chn)
+  local sec = conf_sec("ssid", ssid)
+  if (log_lev > 2) then logger(6,"{prep_client func} PREPARING NEW CLIENT [ "..ssid.." ]") end
+  local ssid = ssid
+  local uci = uci.cursor()
+  local enc = uci:get("wifimanager.@wifi["..sec.."].encrypt")
+  local key = uci:get("wifimanager.@wifi["..sec.."].key")
+   if (log_lev > 2) then logger(7,"{prep_client func} SSID: "..ssid.."\tENCRYPTION: "..enc.."\tKEY: "..key) end
+  if set_client(ssid,enc,key,bssid,chn) then
+    network_reload()
+    repeat
+        local up = net_status()
+    until up
+    if conn_test(net_tries) then
+      return true 
+    end
+  end
+ return false
+end
+
+--## SCAN FOR NETWORKS AND FIND A MATCH IF ANY ##--
+function find_network(ssid)
+  local uci = uci.cursor()
+  local sec = sta_sec("sta")
+  local dis = uci:get("wireless.@wifi-iface["..sec.."].disabled")
+  local ssta = net_scan("wlan0")
+  local csta = config_sta()
+
+  for i,v in ipairs(ssta) do
+   if not ssid or v[1] ~= ssid then
+    if util.contains(csta, v[1]) then
+      logger(1,"{find_network func} FOUND A MATCH "..v[1].." [ FIND_NETWORK FUNCTION ]")
+      if ssid == "disabled" then 
+        uci:set("wireless.@wifi-iface["..sec.."].disabled=0")
+        uci:commit("wireless")
+      end
+      if prep_client(v[1],v[2],v[3]) then
+        logger(1,"{find_network func} NETWORK: [ "..v[1].." ] HAS BEEN CONFIGURED SUCCESFULLY [ FIND_NETWORK FUNCTION ]") 
+        return true 
+      else
+        logger(2,"{find_network func} NETWORK [ "..v[1].." ] FAILED CONECTION TEST !! [ FIND_NETWORK FUNCTION ]")
+        logger(1,"{find_network func} SEARCHING FOR NEXT NETWORK !! [ FIND_NETWORK FUNCTION ]")
+      end
+    end
+   end      
+  end
+  logger(2,"{find_network func} NO TRUSTED NETWORKS FOUND !! [ FIND_NETWORK FUNCTION ]")
+  if ssid ~= "disabled" then
+    logger(1,"{find_network func} DISABLE STA UNTIL A USABLE NETWORK IS FOUND [ FIND_NETWORK FUNCTION ]")
+    uci:set("wireless.@wifi-iface["..sec.."].disabled=1")
+    uci:commit("wireless")
+    network_reload()
+  end
+ return false
+end
+
+--## ADD AN AP TO THE NETWORK ##--
+function add_ap()
+  local ap_key
+  local wsta = wifi_sta()
+  local uci = uci.cursor()
+  local ap_ssid = uci:get("wifimanager", "ap", "ap_ssid")
+  local ap_enc = uci:get("wifimanager", "ap", "ap_encrypt")
+  local dev = uci:get("wireless.@wifi-iface[-1].device")
+  local sec = ap_sec() 
+  
+  if sec then return end 
+  
+  if ap_enc ~= "none" then
+    ap_key = uci:get("wifimanager", "ap", "ap_key")
+  end
+  
+  local sec = ap_sec() 
+  local dev = uci:get("wireless.@wifi-iface[-1].device")
+  
+  if not sec and not util.contains(wsta, ap_ssid) then
+    logger(1,"{add_ap func} NO AP FOUND !! [ AP FUNCTION ]")
+    logger(1,"{add_ap func} ADDING AP { "..ap_ssid.." } [ AP FUNCTION ]")
+    uci:add("wireless", "wifi-iface")
+    uci:set("wireless.@wifi-iface[-1].device="..dev)
+    uci:set("wireless.@wifi-iface[-1].mode=ap")
+    uci:set("wireless.@wifi-iface[-1].ssid="..ap_ssid)
+    uci:set("wireless.@wifi-iface[-1].encryption="..ap_enc)
+	
+    if ap_enc ~= "none" then 
+      uci:set("wireless.@wifi-iface[-1].key="..ap_key)
+    end
+	
+    uci:set("wireless.@wifi-iface[-1].network=lan")
+    uci:commit("wireless")
+    network_reload()
+    logger(1,"{add_ap func} AP [ "..ap_ssid.." ] CONFIGURED SUCCESSFULLY [ AP FUNCTION ]")
+  end
+end
+
+--## ADD THE CURRENT NETWORK TO THE CONFIG IF IT DOESN'T EXIST ##--
+function add_sta()
+  local sec = sta_sec()
+  
+  if not sec then
+	logger(2,"{add_sta func} ERROR NOT STA PRESENT IN THE WIRELESS CONFIG !! [ ADD_STA FUNCTION ]")
+	return
+  end
+
+  local csta = config_sta()
+  local uci = uci.cursor()
+  local essid = uci:get("wireless.@wifi-iface["..sec.."].ssid")
+  local enc = uci:get("wireless.@wifi-iface["..sec.."].encryption")
+  local key = uci:get("wireless.@wifi-iface["..sec.."].key")
+  if not util.contains(csta, essid) then
+    uci:add("wifimanager", "wifi")
+    uci:commit("wifimanager")
+    uci:set("wifimanager.@wifi[-1].ssid="..essid)
+    uci:set("wifimanager.@wifi[-1].encrypt="..enc)
+    uci:set("wifimanager.@wifi[-1].key="..key)
+    uci:commit("wifimanager")
+    logger(1,"{add_sta func} SSID: "..essid.." ADDED TO TRUSTED NETWORKS [ ADD_STA FUNCTION ]")
+  end 
+ return
+end
+---------------------------------------[[ END CONFIGUARATION ]]--------------------------
